@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8"/>
+<title>LinePlay</title>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<style>
+  html,body{height:100%;margin:0;background:#000;color:#ddd;font-family:system-ui,Segoe UI,Roboto,monospace}
+  #ui{
+    position:fixed;
+    left:10px;
+    top:10px;
+    z-index:20;
+    padding:12px 16px;
+    border-radius:10px;
+    background:rgba(0,0,0,0.45);
+    backdrop-filter:blur(6px);
+    border:1px solid rgba(255,255,255,0.05);
+    width:340px;
+    font-family:'Segoe UI',Tahoma,sans-serif;
+  }
+  #ui .header{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    font-weight:700;
+    font-size:16px;
+    margin-bottom:8px;
+    letter-spacing:1px;
+  }
+  #ui .row{display:flex;align-items:center;gap:10px;margin-top:10px}
+  label{font-size:13px;color:#ccc;display:block;margin-top:8px}
+  input[type=range]{width:190px}
+  button{
+    background:#111;
+    border:1px solid #333;
+    color:#fff;
+    padding:8px 12px;
+    border-radius:8px;
+    cursor:pointer;
+    font-weight:600;
+    transition:0.2s;
+  }
+  button:hover{ background:#222; }
+  button:disabled{opacity:0.6;cursor:default;}
+  canvas{display:block;width:100vw;height:100vh}
+  video{display:none}
+</style>
+</head>
+<body>
+
+<div id="ui">
+  <div class="header">
+    <div>LinePlay</div>
+    <div style="font-weight:400;font-size:12px;color:#aaa;font-family:'Courier New',monospace;">By Cloud</div>
+  </div>
+
+  <div class="row">
+    <button id="playBtn">play</button>
+    <button id="muteBtn">mute</button>
+  </div>
+
+  <label>sample width <span id="swVal">160</span></label>
+  <input id="sw" type="range" min="80" max="320" value="160">
+
+  <label>lines <span id="rowsVal">60</span></label>
+  <input id="rows" type="range" min="12" max="160" value="60">
+
+  <label>threshold <span id="thVal">0.18</span></label>
+  <input id="th" type="range" min="0" max="1" step="0.01" value="0.18">
+
+  <label>amplitude <span id="ampVal">40</span></label>
+  <input id="amp" type="range" min="0" max="160" value="40">
+
+  <label>thickness <span id="lwVal">1.2</span></label>
+  <input id="lw" type="range" min="0.2" max="6" step="0.1" value="1.2">
+
+  <label>glow <span id="gVal">12</span></label>
+  <input id="gl" type="range" min="0" max="40" value="12">
+
+  <div style="margin-top:10px">
+    <label style="background:#111;padding:8px 12px;border-radius:8px;cursor:pointer;font-weight:600">
+      video yükle
+      <input id="fileInput" type="file" accept="video/*" style="display:none">
+    </label>
+  </div>
+
+  <div style="margin-top:10px">
+    <button id="badAppleBtn">Bad Apple</button>
+  </div>
+</div>
+
+<canvas id="out"></canvas>
+<video id="video" loop crossorigin playsinline></video>
+<canvas id="sample" style="display:none"></canvas>
+
+<script>
+// video ve canvas setup
+const video=document.getElementById('video');
+const out=document.getElementById('out');
+const ctx=out.getContext('2d',{alpha:true});
+const sample=document.getElementById('sample');
+const sctx=sample.getContext('2d');
+
+let W=innerWidth,H=innerHeight;
+out.width=W; out.height=H;
+window.addEventListener('resize',()=>{ W=innerWidth; H=innerHeight; out.width=W; out.height=H; });
+
+let sw=160, rows=60, threshold=0.18, amplitude=40, lineWidth=1.2, glow=12;
+
+// sliders
+const swSlider=document.getElementById('sw');
+const rowsSlider=document.getElementById('rows');
+const thSlider=document.getElementById('th');
+const ampSlider=document.getElementById('amp');
+const lwSlider=document.getElementById('lw');
+const glSlider=document.getElementById('gl');
+
+const swVal=document.getElementById('swVal');
+const rowsVal=document.getElementById('rowsVal');
+const thVal=document.getElementById('thVal');
+const ampVal=document.getElementById('ampVal');
+const lwVal=document.getElementById('lwVal');
+const gVal=document.getElementById('gVal');
+
+swSlider.addEventListener('input',()=>{ sw=parseInt(swSlider.value); swVal.textContent=sw; });
+rowsSlider.addEventListener('input',()=>{ rows=parseInt(rowsSlider.value); rowsVal.textContent=rows; });
+thSlider.addEventListener('input',()=>{ threshold=parseFloat(thSlider.value); thVal.textContent=threshold.toFixed(2); });
+ampSlider.addEventListener('input',()=>{ amplitude=parseFloat(ampSlider.value); ampVal.textContent=amplitude; });
+lwSlider.addEventListener('input',()=>{ lineWidth=parseFloat(lwSlider.value); lwVal.textContent=lineWidth.toFixed(1); });
+glSlider.addEventListener('input',()=>{ glow=parseInt(glSlider.value); gVal.textContent=glow; });
+
+// file input
+const fileInput=document.getElementById('fileInput');
+fileInput.addEventListener('change',e=>{ if(e.target.files[0]) loadVideo(URL.createObjectURL(e.target.files[0])); });
+
+// Bad Apple button cooldown
+const badAppleBtn=document.getElementById('badAppleBtn');
+let badAppleCooldown=false;
+badAppleBtn.addEventListener('click',()=>{
+  if(badAppleCooldown) return;
+  loadVideo('https://raw.githubusercontent.com/Cloudtr1/LinePlay/46ff103c813a54eb9dadecc94f12cf27c1ca1fad/video.mp4');
+  badAppleCooldown=true;
+  badAppleBtn.disabled=true;
+  setTimeout(()=>{ badAppleCooldown=false; badAppleBtn.disabled=false; },3000);
+});
+
+// load video
+function loadVideo(url){
+  video.pause();
+  video.src=url;
+  video.load();
+  video.play().catch(()=>{});
+  updatePlayBtn();
+}
+
+// play/pause & mute
+const playBtn=document.getElementById('playBtn');
+playBtn.addEventListener('click',togglePlay);
+function togglePlay(){
+  if(video.paused){ video.play().catch(()=>{}); } 
+  else { video.pause(); }
+  updatePlayBtn();
+}
+function updatePlayBtn(){ playBtn.textContent = video.paused ? 'play' : 'pause'; }
+
+document.getElementById('muteBtn').addEventListener('click',()=>{ 
+  video.muted=!video.muted; 
+  document.getElementById('muteBtn').textContent=video.muted?'muted':'mute'; 
+});
+
+// compute brightness
+function computeGray(imgd,w,h){
+  const data=imgd.data,gray=new Float32Array(w*h);
+  let p=0;
+  for(let i=0;i<w*h;i++){
+    const r=data[p++],g=data[p++],b=data[p++];p++;
+    gray[i]=(0.299*r+0.587*g+0.114*b)/255;
+  }
+  return gray;
+}
+
+// render frame
+function renderFrame(){
+  if(video.readyState<2) return;
+  const sh=rows;
+  sample.width=sw; sample.height=sh;
+  try{sctx.drawImage(video,0,0,sw,sh);}catch(e){}
+  const imgd=sctx.getImageData(0,0,sw,sh);
+  const gray=computeGray(imgd,sw,sh);
+
+  ctx.clearRect(0,0,W,H);
+  ctx.fillStyle='rgba(0,0,0,0.16)'; ctx.fillRect(0,0,W,H);
+
+  ctx.save();
+  ctx.lineCap='round'; ctx.lineJoin='round';
+  ctx.globalCompositeOperation='lighter';
+  ctx.shadowColor='rgba(255,255,255,0.8)';
+  ctx.shadowBlur=glow;
+  ctx.strokeStyle='rgba(255,255,255,0.9)';
+
+  const sx=W/sw, sy=H/sh;
+
+  for(let ry=0;ry<sh;ry++){
+    let pathStarted=false;
+    const path=new Path2D();
+    let gapCounter=0,maxGap=2;
+    for(let x=0;x<sw;x++){
+      const idx=ry*sw+x;
+      const b=gray[idx];
+      if(b>=threshold||(gapCounter<maxGap&&pathStarted)){
+        const px=(x+0.5)*sx;
+        const up=(ry>0)?gray[(ry-1)*sw+x]:b;
+        const down=(ry<sh-1)?gray[(ry+1)*sw+x]:b;
+        const local=(up+b+down)/3;
+        const py=(ry+0.5)*sy + (local-0.5)*amplitude;
+        if(!pathStarted){ path.moveTo(px,py); pathStarted=true; } else path.lineTo(px,py);
+        gapCounter=0;
+      } else { gapCounter++; if(gapCounter>=maxGap&&pathStarted){ ctx.lineWidth=lineWidth; ctx.stroke(path); pathStarted=false; } }
+    }
+    if(pathStarted){ ctx.lineWidth=lineWidth; ctx.stroke(path); }
+  }
+
+  ctx.restore();
+}
+
+// animation
+let rvfc=video.requestVideoFrameCallback?.bind(video);
+if(rvfc){
+  const cb=(now,meta)=>{ renderFrame(); video.requestVideoFrameCallback(cb); };
+  video.addEventListener('play',()=>{ video.requestVideoFrameCallback(cb); });
+} else { function loop(){ if(!video.paused&&!video.ended) renderFrame(); requestAnimationFrame(loop); } requestAnimationFrame(loop); }
+
+out.addEventListener('click',togglePlay);
+
+video.addEventListener('loadeddata',()=>{ updatePlayBtn(); video.play().catch(()=>{}); });
+
+window.addEventListener('keydown',(e)=>{
+  if(e.key===' '){ e.preventDefault(); togglePlay(); }
+  if(e.key==='m'){ video.muted=!video.muted; document.getElementById('muteBtn').textContent=video.muted?'muted':'mute'; }
+});
+</script>
+
+</body>
+</html>
